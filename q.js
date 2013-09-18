@@ -47,29 +47,6 @@ var noop = function () {};
 require("es5-shim");
 var asap = require("asap");
 
-// Attempt to make generics safe in the face of downstream
-// modifications.
-// There is no situation where this is necessary.
-// If you need a security guarantee, these primordials need to be
-// deeply frozen anyway, and if you don’t need a security guarantee,
-// this is just plain paranoid.
-// However, this does have the nice side-effect of reducing the size
-// of the code by reducing x.call() to merely x(), eliminating many
-// hard-to-minify characters.
-// See Mark Miller’s explanation of what this does.
-// http://wiki.ecmascript.org/doku.php?id=conventions:safe_meta_programming
-var call = Function.call;
-function uncurryThis(f) {
-    return function () {
-        return call.apply(f, arguments);
-    };
-}
-// This is equivalent, but slower:
-// uncurryThis = Function_bind.bind(Function_bind.call);
-// http://jsperf.com/uncurrythis
-
-var array_slice = uncurryThis(Array.prototype.slice);
-
 var object_create = Object.create || function (prototype) {
     function Type() { }
     Type.prototype = prototype;
@@ -255,7 +232,7 @@ function defer() {
     var promise = object_create(Promise.prototype);
 
     promise.promiseDispatch = function (resolve, op, operands) {
-        var args = array_slice(arguments);
+        var args = Array.prototype.slice.call(arguments);
         if (messages) {
             messages.push(args);
             if (op === "when" && operands[1]) { // progress operand
@@ -368,7 +345,7 @@ defer.prototype.makeNodeResolver = function () {
         if (error) {
             self.reject(error);
         } else if (arguments.length > 2) {
-            self.resolve(array_slice(arguments, 1));
+            self.resolve(Array.prototype.slice.call(arguments, 1));
         } else {
             self.resolve(value);
         }
@@ -1113,13 +1090,13 @@ Promise.prototype.post = function (name, args) {
 Q.send = // XXX Mark Miller's proposed parlance
 Q.mcall = // XXX As proposed by "Redsandro"
 Q.invoke = function (object, name /*...args*/) {
-    return Q(object).dispatch("post", [name, array_slice(arguments, 2)]);
+    return Q(object).dispatch("post", [name, Array.prototype.slice.call(arguments, 2)]);
 };
 
 Promise.prototype.send = // XXX Mark Miller's proposed parlance
 Promise.prototype.mcall = // XXX As proposed by "Redsandro"
 Promise.prototype.invoke = function (name /*...args*/) {
-    return this.dispatch("post", [name, array_slice(arguments, 1)]);
+    return this.dispatch("post", [name, Array.prototype.slice.call(arguments, 1)]);
 };
 
 /**
@@ -1142,11 +1119,11 @@ Promise.prototype.fapply = function (args) {
  */
 Q["try"] =
 Q.fcall = function (object /* ...args*/) {
-    return Q(object).dispatch("apply", [void 0, array_slice(arguments, 1)]);
+    return Q(object).dispatch("apply", [void 0, Array.prototype.slice.call(arguments, 1)]);
 };
 
 Promise.prototype.fcall = function (/*...args*/) {
-    return this.dispatch("apply", [void 0, array_slice(arguments)]);
+    return this.dispatch("apply", [void 0, Array.prototype.slice.call(arguments)]);
 };
 
 /**
@@ -1157,21 +1134,21 @@ Promise.prototype.fcall = function (/*...args*/) {
  */
 Q.fbind = function (object /*...args*/) {
     var promise = Q(object);
-    var args = array_slice(arguments, 1);
+    var args = Array.prototype.slice.call(arguments, 1);
     return function fbound() {
         return promise.dispatch("apply", [
             this,
-            args.concat(array_slice(arguments))
+            args.concat(Array.prototype.slice.call(arguments))
         ]);
     };
 };
 Promise.prototype.fbind = function (/*...args*/) {
     var promise = this;
-    var args = array_slice(arguments);
+    var args = Array.prototype.slice.call(arguments);
     return function fbound() {
         return promise.dispatch("apply", [
             this,
-            args.concat(array_slice(arguments))
+            args.concat(Array.prototype.slice.call(arguments))
         ]);
     };
 };
@@ -1202,9 +1179,15 @@ Promise.prototype.keys = function () {
 Q.all = all;
 function all(promises) {
     return when(promises, function (promises) {
+        if (!promises) {
+            return [];
+        }
+        if (!Array.isArray(promises) && !promises.forEach) {
+            promises = Array.prototype.slice.call(promises);
+        }
         var countDown = 0;
         var deferred = defer();
-        Array.prototype.forEach.call(promises, function (promise, index) {
+        promises.forEach(function (promise, index) {
             var snapshot;
             if (
                 isPromise(promise) &&
@@ -1466,7 +1449,7 @@ Q.nfapply = function (callback, args) {
 
 Promise.prototype.nfapply = function (args) {
     var deferred = defer();
-    var nodeArgs = array_slice(args);
+    var nodeArgs = Array.prototype.slice.call(args);
     nodeArgs.push(deferred.makeNodeResolver());
     this.fapply(nodeArgs).fail(deferred.reject);
     return deferred.promise;
@@ -1482,12 +1465,12 @@ Promise.prototype.nfapply = function (args) {
  *
  */
 Q.nfcall = function (callback /*...args*/) {
-    var args = array_slice(arguments, 1);
+    var args = Array.prototype.slice.call(arguments, 1);
     return Q(callback).nfapply(args);
 };
 
 Promise.prototype.nfcall = function (/*...args*/) {
-    var nodeArgs = array_slice(arguments);
+    var nodeArgs = Array.prototype.slice.call(arguments);
     var deferred = defer();
     nodeArgs.push(deferred.makeNodeResolver());
     this.fapply(nodeArgs).fail(deferred.reject);
@@ -1504,9 +1487,9 @@ Promise.prototype.nfcall = function (/*...args*/) {
  */
 Q.nfbind =
 Q.denodeify = function (callback /*...args*/) {
-    var baseArgs = array_slice(arguments, 1);
+    var baseArgs = Array.prototype.slice.call(arguments, 1);
     return function () {
-        var nodeArgs = baseArgs.concat(array_slice(arguments));
+        var nodeArgs = baseArgs.concat(Array.prototype.slice.call(arguments));
         var deferred = defer();
         nodeArgs.push(deferred.makeNodeResolver());
         Q(callback).fapply(nodeArgs).fail(deferred.reject);
@@ -1516,15 +1499,15 @@ Q.denodeify = function (callback /*...args*/) {
 
 Promise.prototype.nfbind =
 Promise.prototype.denodeify = function (/*...args*/) {
-    var args = array_slice(arguments);
+    var args = Array.prototype.slice.call(arguments);
     args.unshift(this);
     return Q.denodeify.apply(void 0, args);
 };
 
 Q.nbind = function (callback, thisp /*...args*/) {
-    var baseArgs = array_slice(arguments, 2);
+    var baseArgs = Array.prototype.slice.call(arguments, 2);
     return function () {
-        var nodeArgs = baseArgs.concat(array_slice(arguments));
+        var nodeArgs = baseArgs.concat(Array.prototype.slice.call(arguments));
         var deferred = defer();
         nodeArgs.push(deferred.makeNodeResolver());
         function bound() {
@@ -1536,7 +1519,7 @@ Q.nbind = function (callback, thisp /*...args*/) {
 };
 
 Promise.prototype.nbind = function (/*thisp, ...args*/) {
-    var args = array_slice(arguments, 0);
+    var args = Array.prototype.slice.call(arguments, 0);
     args.unshift(this);
     return Q.nbind.apply(void 0, args);
 };
@@ -1557,7 +1540,7 @@ Q.npost = function (object, name, args) {
 
 Promise.prototype.nmapply = // XXX As proposed by "Redsandro"
 Promise.prototype.npost = function (name, args) {
-    var nodeArgs = array_slice(args || []);
+    var nodeArgs = Array.prototype.slice.call(args || []);
     var deferred = defer();
     nodeArgs.push(deferred.makeNodeResolver());
     this.dispatch("post", [name, nodeArgs]).fail(deferred.reject);
@@ -1577,7 +1560,7 @@ Promise.prototype.npost = function (name, args) {
 Q.nsend = // XXX Based on Mark Miller's proposed "send"
 Q.nmcall = // XXX Based on "Redsandro's" proposal
 Q.ninvoke = function (object, name /*...args*/) {
-    var nodeArgs = array_slice(arguments, 2);
+    var nodeArgs = Array.prototype.slice.call(arguments, 2);
     var deferred = defer();
     nodeArgs.push(deferred.makeNodeResolver());
     Q(object).dispatch("post", [name, nodeArgs]).fail(deferred.reject);
@@ -1587,7 +1570,7 @@ Q.ninvoke = function (object, name /*...args*/) {
 Promise.prototype.nsend = // XXX Based on Mark Miller's proposed "send"
 Promise.prototype.nmcall = // XXX Based on "Redsandro's" proposal
 Promise.prototype.ninvoke = function (name /*...args*/) {
-    var nodeArgs = array_slice(arguments, 1);
+    var nodeArgs = Array.prototype.slice.call(arguments, 1);
     var deferred = defer();
     nodeArgs.push(deferred.makeNodeResolver());
     this.dispatch("post", [name, nodeArgs]).fail(deferred.reject);
