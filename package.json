@@ -42,7 +42,8 @@
   },
   "dependencies": {
     "asap": "~1.0.0",
-    "es5-shim": "~2.1.0"
+    "es5-shim": "~2.1.0",
+    "weak-map": "~1.0.0"
   },
   "devDependencies": {
     "jshint": "~2.1.9",

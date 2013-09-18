@@ -1,5 +1,7 @@
 <!-- vim:ts=4:sts=4:sw=4:et:tw=60 -->
 
+ - :warning: `valueOf` has been removed.
+
 ## 0.9.7
 
  - :warning: `q.min.js` is no longer checked-in.  It is however still
